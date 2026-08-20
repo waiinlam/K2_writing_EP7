@@ -18,7 +18,7 @@
             overflow: hidden;
             background-color: #f7f9fc;
             font-family: "Microsoft JhengHei", Arial, sans-serif;
-            touch-action: none; /* 防止手機/平板滑動干擾 */
+            touch-action: none;
         }
         #game-container {
             position: relative;
@@ -34,19 +34,17 @@
             width: 100%;
             height: 100%;
         }
-        /* 左上角星星進度 */
         #score-board {
             position: absolute;
             top: 20px;
             left: 20px;
             font-size: 24px;
             z-index: 10;
-            background: rgba(255, 255, 255, 0.8);
+            background: rgba(255, 255, 255, 0.9);
             padding: 8px 15px;
             border-radius: 20px;
             box-shadow: 0 4px 10px rgba(0,0,0,0.1);
         }
-        /* 全螢幕獎勵動畫遮罩 */
         #reward-overlay {
             position: absolute;
             top: 0;
@@ -73,14 +71,12 @@
             border-radius: 30px;
             text-align: center;
             box-shadow: 0 10px 30px rgba(0,0,0,0.3);
-            animation: bounceIn 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
         }
         .reward-card h1 {
             color: #ff6b81;
             font-size: 40px;
             margin: 0 0 20px 0;
         }
-        /* 再玩一次按鈕 */
         #restart-btn {
             position: absolute;
             bottom: 30px;
@@ -93,19 +89,9 @@
             background: #ff4757;
             border: none;
             border-radius: 50px;
-            box-shadow: 0 6px 20px rgba(255, 71, 87, 0.4);
             cursor: pointer;
             z-index: 20;
             display: none;
-            transition: transform 0.2s;
-        }
-        #restart-btn:active {
-            transform: translateX(-50%) scale(0.95);
-        }
-        @keyframes bounceIn {
-            0% { transform: scale(0.3); opacity: 0; }
-            50% { transform: scale(1.05); opacity: 1; }
-            100% { transform: scale(1); opacity: 1; }
         }
     </style>
 </head>
@@ -125,110 +111,87 @@
 </div>
 
 <script>
-    const canvas = document.getElementById('gameCanvas');
-    const ctx = canvas.getContext('2d');
-    const starCountEl = document.getElementById('star-count');
-    const rewardOverlay = document.getElementById('reward-overlay');
-    const restartBtn = document.getElementById('restart-btn');
+    var canvas = document.getElementById('gameCanvas');
+    var ctx = canvas.getContext('2d');
+    var starCountEl = document.getElementById('star-count');
+    var rewardOverlay = document.getElementById('reward-overlay');
+    var restartBtn = document.getElementById('restart-btn');
 
-    // 圖片資源
-    const bgImg = new Image();
+    var scale = 1, offsetX = 0, offsetY = 0;
+    var logicalWidth = 1414, logicalHeight = 2000;
+    var completedStars = 0;
+    var isGameOver = false;
+
+    var isDragging = false;
+    var userPath = [];
+    var startPoint = { x: 707, y: 1100 };
+    var endPoint = { x: 760, y: 1550 };
+    var hookControlPoint = { x: 707, y: 1550 };
+    var touchRadius = 65;
+
+    // 載入圖片
+    var bgImg = new Image();
     bgImg.src = '20.png';
-    const umbrellaImg = new Image();
+    var bgLoaded = false;
+    bgImg.onload = function() { bgLoaded = true; };
+
+    var umbrellaImg = new Image();
     umbrellaImg.src = '21.png';
-
-    let imagesLoaded = 0;
-    bgImg.onload = () => { checkImagesLoaded(); };
-    umbrellaImg.onload = () => { checkImagesLoaded(); };
-
-    function checkImagesLoaded() {
-        imagesLoaded++;
-        if (imagesLoaded === 2) {
-            resizeCanvas();
-            initGame();
-            loop();
-        }
-    }
-
-    // 遊戲狀態變數
-    let scale = 1, offsetX = 0, offsetY = 0;
-    let logicalWidth = 1414, logicalHeight = 2000;
-    let completedStars = 0;
-    let isGameOver = false;
-
-    // 互動控制
-    let isDragging = false;
-    let userPath = []; // 紀錄畫過的點
-    let startPoint = { x: 0, y: 0 };
-    let endPoint = { x: 0, y: 0 };
-    let hookControlPoint = { x: 0, y: 0 }; // 模擬鈎的曲線控制點
-    const touchRadius = 60; // 容許小朋友觸控的寬鬆判定範圍
+    var umbrellaLoaded = false;
+    umbrellaImg.onload = function() { umbrellaLoaded = true; };
 
     function resizeCanvas() {
-        const container = document.getElementById('game-container');
-        const width = container.clientWidth;
-        const height = container.clientHeight;
+        var container = document.getElementById('game-container');
+        var width = container.clientWidth;
+        var height = container.clientHeight;
+        
+        // 為了舊平板相容性，取較安全的數值
+        var pixelRatio = window.devicePixelRatio || 1;
 
-        canvas.width = width * window.devicePixelRatio;
-        canvas.height = height * window.devicePixelRatio;
-        ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
+        canvas.width = width * pixelRatio;
+        canvas.height = height * pixelRatio;
+        ctx.scale(pixelRatio, pixelRatio);
 
-        // 計算適應畫面比例 (保持 1414:2000 比例置中)
-        const scaleX = width / logicalWidth;
-        const scaleY = height / logicalHeight;
+        var scaleX = width / logicalWidth;
+        var scaleY = height / logicalHeight;
         scale = Math.min(scaleX, scaleY);
 
         offsetX = (width - logicalWidth * scale) / 2;
         offsetY = (height - logicalHeight * scale) / 2;
     }
 
-    window.addEventListener('resize', () => {
-        resizeCanvas();
-        if(imagesLoaded === 2) initCoordinates();
-    });
+    window.addEventListener('resize', resizeCanvas);
+    resizeCanvas();
 
-    function initCoordinates() {
-        // 根據 1414x2000 畫布設定「雨傘：鈎」的起點與終點座標
-        // 起點設於傘布下方中心偏上，終點為傘柄末端（向右勾起）
-        startPoint = { x: 707, y: 1100 }; 
-        endPoint = { x: 760, y: 1550 };
-        hookControlPoint = { x: 707, y: 1550 }; // 產生圓弧鈎形
-    }
-
-    function initGame() {
-        initCoordinates();
-        userPath = [];
-        isDragging = false;
-        rewardOverlay.classList.remove('show');
-    }
-
-    // 座標轉換：螢幕觸控點轉邏輯座標
     function getLogicalPos(e) {
-        const rect = canvas.getBoundingClientRect();
-        const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-        const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-        
-        const x = (clientX - rect.left - offsetX) / scale;
-        const y = (clientY - rect.top - offsetY) / scale;
-        return { x, y };
+        var rect = canvas.getBoundingClientRect();
+        var clientX = e.touches && e.touches.length > 0 ? e.touches[0].clientX : e.clientX;
+        var clientY = e.touches && e.touches.length > 0 ? e.touches[0].clientY : e.clientY;
+        return {
+            x: (clientX - rect.left - offsetX) / scale,
+            y: (clientY - rect.top - offsetY) / scale
+        };
     }
 
-    // 事件監聽 (支援滑鼠與觸控)
-    canvas.addEventListener('mousedown', handleStart);
-    canvas.addEventListener('mousemove', handleMove);
-    canvas.addEventListener('mouseup', handleEnd);
+    // 計算兩點距離 (傳統寫法相容舊設備)
+    function getDistance(p1, p2) {
+        var dx = p1.x - p2.x;
+        var dy = p1.y - p2.y;
+        return Math.sqrt(dx * dx + dy * dy);
+    }
 
-    canvas.addEventListener('touchstart', (e) => { handleStart(e); });
-    canvas.addEventListener('touchmove', (e) => { handleMove(e); });
-    canvas.addEventListener('touchend', (e) => { handleEnd(e); });
+    canvas.addEventListener('mousedown', handleStart, false);
+    canvas.addEventListener('mousemove', handleMove, false);
+    canvas.addEventListener('mouseup', handleEnd, false);
+
+    canvas.addEventListener('touchstart', function(e) { handleStart(e); }, {passive: false});
+    canvas.addEventListener('touchmove', function(e) { e.preventDefault(); handleMove(e); }, {passive: false});
+    canvas.addEventListener('touchend', function(e) { handleEnd(e); }, false);
 
     function handleStart(e) {
         if (isGameOver) return;
-        const pos = getLogicalPos(e);
-
-        // 檢查是否點擊在起點附近
-        const dist = Math.hypot(pos.x - startPoint.x, pos.y - startPoint.y);
-        if (dist <= touchRadius) {
+        var pos = getLogicalPos(e);
+        if (getDistance(pos, startPoint) <= touchRadius) {
             isDragging = true;
             userPath = [startPoint];
         }
@@ -236,21 +199,18 @@
 
     function handleMove(e) {
         if (!isDragging || isGameOver) return;
-        const pos = getLogicalPos(e);
+        var pos = getLogicalPos(e);
         userPath.push(pos);
 
-        // 即時檢查是否到達終點附近
-        const distTo przyj = Math.hypot(pos.x - endPoint.x, pos.y - endPoint.y);
-        if (distTo <= touchRadius) {
+        if (getDistance(pos, endPoint) <= touchRadius) {
             isDragging = false;
             triggerSuccess();
         }
     }
 
-    function handleEnd(e) {
+    function handleEnd() {
         if (!isDragging) return;
         isDragging = false;
-        // 如果未到達終點就放開，清空重來
         userPath = [];
     }
 
@@ -265,54 +225,57 @@
             restartBtn.style.display = 'block';
         } else {
             rewardOverlay.classList.add('show');
-            setTimeout(() => {
+            setTimeout(function() {
                 rewardOverlay.classList.remove('show');
-                initGame();
+                userPath = [];
             }, 1200);
         }
     }
 
-    restartBtn.addEventListener('click', () => {
+    restartBtn.addEventListener('click', function() {
         completedStars = 0;
         starCountEl.textContent = completedStars;
         isGameOver = false;
         restartBtn.style.display = 'none';
-        initGame();
+        userPath = [];
+        rewardOverlay.classList.remove('show');
     });
 
-    // 繪製邏輯
+    // 畫面主迴圈
     function loop() {
-        ctx.clearRect(0, 0, canvas.width / window.devicePixelRatio, canvas.height / window.devicePixelRatio);
-
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
         ctx.save();
         ctx.translate(offsetX, offsetY);
         ctx.scale(scale, scale);
 
-        // 1. 繪製背景 (20.png)
-        if (bgImg.complete) {
+        // 背景
+        if (bgLoaded) {
             ctx.drawImage(bgImg, 0, 0, logicalWidth, logicalHeight);
+        } else {
+            ctx.fillStyle = "#e8eff5";
+            ctx.fillRect(0, 0, logicalWidth, logicalHeight);
         }
 
-        // 2. 繪製雨傘 (21.png，置中)
-        if (umbrellaImg.complete) {
+        // 雨傘
+        if (umbrellaLoaded) {
             ctx.drawImage(umbrellaImg, 0, 0, logicalWidth, logicalHeight);
         }
 
-        // 3. 繪製半透明安全道路提示（引導運筆：垂直向下並向右勾起）
+        // 提示線
         ctx.beginPath();
         ctx.moveTo(startPoint.x, startPoint.y);
         ctx.quadraticCurveTo(hookControlPoint.x, hookControlPoint.y, endPoint.x, endPoint.y);
-        ctx.strokeStyle = 'rgba(255, 165, 0, 0.4)';
+        ctx.strokeStyle = 'rgba(255, 165, 0, 0.5)';
         ctx.lineWidth = 35;
         ctx.lineCap = 'round';
         ctx.lineJoin = 'round';
         ctx.stroke();
 
-        // 4. 繪製小朋友畫過的粗實線軌跡
+        // 玩家軌跡
         if (userPath.length > 1) {
             ctx.beginPath();
             ctx.moveTo(userPath[0].x, userPath[0].y);
-            for (let i = 1; i < userPath.length; i++) {
+            for (var i = 1; i < userPath.length; i++) {
                 ctx.lineTo(userPath[i].x, userPath[i].y);
             }
             ctx.strokeStyle = '#ff3838';
@@ -322,18 +285,15 @@
             ctx.stroke();
         }
 
-        // 5. 繪製起點與終點提示導引圓點
-        // 起點 (閃爍綠燈引導)
-        const pulse = 15 + Math.sin(Date.now() / 150) * 3;
+        // 起點與終點圓圈
         ctx.beginPath();
-        ctx.arc(startPoint.x, startPoint.y, pulse, 0, Math.PI * 2);
-        ctx.fillStyle = 'rgba(46, 213, 115, 0.8)';
+        ctx.arc(startPoint.x, startPoint.y, 20, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(46, 213, 115, 0.9)';
         ctx.fill();
         ctx.lineWidth = 4;
         ctx.strokeStyle = '#fff';
         ctx.stroke();
 
-        // 終點 (標示目標星星)
         ctx.beginPath();
         ctx.arc(endPoint.x, endPoint.y, 25, 0, Math.PI * 2);
         ctx.fillStyle = '#ff4757';
@@ -343,8 +303,13 @@
         ctx.stroke();
 
         ctx.restore();
-        requestAnimationFrame(loop);
+        
+        // 舊設備相容的動畫呼叫
+        var reqAnimFrame = window.requestAnimationFrame || window.webkitRequestAnimationFrame || window.mozRequestAnimationFrame || function(callback) { window.setTimeout(callback, 1000 / 60); };
+        reqAnimFrame(loop);
     }
+
+    loop();
 </script>
 
 </body>
