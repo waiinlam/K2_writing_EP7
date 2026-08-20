@@ -68,7 +68,7 @@
         }
         .reward-card {
             background: #fff;
-            padding: 30px 50px;
+            padding: 40px 50px;
             border-radius: 30px;
             text-align: center;
             box-shadow: 0 10px 30px rgba(0,0,0,0.3);
@@ -76,13 +76,12 @@
         .reward-card h1 {
             color: #ff6b81;
             font-size: 40px;
-            margin: 0 0 20px 0;
+            margin: 0 0 15px 0;
         }
+        
+        /* 修正後的「再玩一次」按鈕，放於卡片內 */
         #restart-btn {
-            position: absolute;
-            bottom: 30px;
-            left: 50%;
-            transform: translateX(-50%);
+            margin-top: 25px;
             padding: 15px 40px;
             font-size: 22px;
             font-weight: bold;
@@ -90,9 +89,12 @@
             background: #ff4757;
             border: none;
             border-radius: 50px;
+            box-shadow: 0 6px 20px rgba(255, 71, 87, 0.4);
             cursor: pointer;
-            z-index: 20;
-            display: none;
+            display: none; /* 由 Javascript 控制顯示 */
+        }
+        #restart-btn:active {
+            transform: scale(0.95);
         }
     </style>
 </head>
@@ -101,12 +103,14 @@
 <div id="game-container">
     <div id="score-board">⭐ <span id="star-count">0</span> / 5</div>
     <canvas id="gameCanvas"></canvas>
-    <button id="restart-btn">再玩一次</button>
     
+    <!-- 獎勵畫面及按鈕 -->
     <div id="reward-overlay">
         <div class="reward-card">
             <h1>✨ 你真努力！</h1>
             <p id="reward-sub" style="font-size: 20px; color: #555; margin: 0;">太棒了，完成一個直鈎囉！</p>
+            <!-- 按鈕移到此處 -->
+            <button id="restart-btn">再玩一次</button>
         </div>
     </div>
 </div>
@@ -123,20 +127,20 @@
     var completedStars = 0;
     var isGameOver = false;
 
-    // --- 新版座標設定 (傘邊下起點、縮短 5% 直線) ---
-    var startPoint = { x: 707, y: 1100 };       // 起點 (移至傘邊下方)
-    var turnPoint = { x: 707, y: 1510 };        // 轉角位 (直線長度縮短)
-    var hookControlPoint = { x: 707, y: 1560 }; // 彎位控制點
-    var endPoint = { x: 550, y: 1450 };         // 終點 
+    // --- 座標設定 ---
+    var startPoint = { x: 707, y: 1100 };       
+    var turnPoint = { x: 707, y: 1510 };        
+    var hookControlPoint = { x: 707, y: 1560 }; 
+    var endPoint = { x: 550, y: 1450 };         
 
     // --- 防出界系統設定 ---
-    var pathWidth = 80;            // 200% 加寬的引導路線
-    var touchRadius = 100;         // 起點/終點的感應範圍 (加大方便點擊)
-    var allowedDeviation = 90;     // 允許手指偏離路線的最大距離，超過此數字即視為「出界重來」
+    var pathWidth = 80;            
+    var touchRadius = 100;         
+    var allowedDeviation = 90;     
     
     var isDragging = false;
     var userPath = [];
-    var guidePoints = []; // 預先計算好的軌跡中心點，用作偵測是否出界
+    var guidePoints = []; 
 
     // 載入圖片
     var bgImg = new Image();
@@ -152,14 +156,12 @@
     // 預先產生「防出界」的軌跡偵測點
     function generateGuidePoints() {
         guidePoints = [];
-        // 1. 直線部分
         for (var i = 0; i <= 1; i += 0.05) {
             guidePoints.push({
                 x: startPoint.x + (turnPoint.x - startPoint.x) * i,
                 y: startPoint.y + (turnPoint.y - startPoint.y) * i
             });
         }
-        // 2. 轉彎鈎起部分 (二次貝茲曲線公式)
         for (var i = 0; i <= 1; i += 0.05) {
             var u = 1 - i;
             var x = u * u * turnPoint.x + 2 * u * i * hookControlPoint.x + i * i * endPoint.x;
@@ -167,7 +169,7 @@
             guidePoints.push({ x: x, y: y });
         }
     }
-    generateGuidePoints(); // 初始化時執行一次
+    generateGuidePoints(); 
 
     function resizeCanvas() {
         var container = document.getElementById('game-container');
@@ -229,26 +231,22 @@
         if (!isDragging || isGameOver) return;
         var pos = getLogicalPos(e);
         
-        // --- 檢查是否出界 (防偏離系統) ---
         var isOffPath = true;
         for (var i = 0; i < guidePoints.length; i++) {
             if (getDistance(pos, guidePoints[i]) <= allowedDeviation) {
-                isOffPath = false; // 只要靠近軌跡上的任何一點，就當作在路線內
+                isOffPath = false; 
                 break;
             }
         }
 
         if (isOffPath) {
-            // 如果出界，直接中斷拖曳並清空筆畫 (重回起點)
             isDragging = false;
             userPath = [];
             return;
         }
 
-        // 如果未出界，記錄筆畫
         userPath.push(pos);
 
-        // 檢查是否到達終點
         if (getDistance(pos, endPoint) <= touchRadius) {
             isDragging = false;
             triggerSuccess();
@@ -269,7 +267,8 @@
             isGameOver = true;
             rewardOverlay.classList.add('show');
             document.getElementById('reward-sub').textContent = "你已經完成 5 次挑戰囉！";
-            restartBtn.style.display = 'block';
+            // 顯示按鈕 ( inline-block 確保置中對齊)
+            restartBtn.style.display = 'inline-block';
         } else {
             rewardOverlay.classList.add('show');
             setTimeout(function() {
@@ -304,33 +303,33 @@
             ctx.drawImage(umbrellaImg, 0, 0, logicalWidth, logicalHeight);
         }
 
-        // 3. 繪製加寬 200% 的引導路線
+        // --- 繪製半透明淺紫色引導路線 ---
         ctx.beginPath();
         ctx.moveTo(startPoint.x, startPoint.y);
         ctx.lineTo(turnPoint.x, turnPoint.y); 
         ctx.quadraticCurveTo(hookControlPoint.x, hookControlPoint.y, endPoint.x, endPoint.y); 
-        ctx.strokeStyle = 'rgba(255, 165, 0, 0.4)';
-        ctx.lineWidth = pathWidth; // 寬度設為 80
+        ctx.strokeStyle = 'rgba(190, 150, 255, 0.5)'; // 更新為淺紫色
+        ctx.lineWidth = pathWidth; 
         ctx.lineCap = 'round';
         ctx.lineJoin = 'round';
         ctx.stroke();
 
-        // 4. 繪製玩家軌跡
+        // --- 繪製玩家軌跡 ---
         if (userPath.length > 1) {
             ctx.beginPath();
             ctx.moveTo(userPath[0].x, userPath[0].y);
             for (var i = 1; i < userPath.length; i++) {
                 ctx.lineTo(userPath[i].x, userPath[i].y);
             }
-            ctx.strokeStyle = '#ff3838';
-            ctx.lineWidth = 40; // 相應加粗紅色軌跡
+            ctx.strokeStyle = '#ff3838'; // 玩家畫出的紅線
+            ctx.lineWidth = 40; 
             ctx.lineCap = 'round';
             ctx.lineJoin = 'round';
             ctx.stroke();
         }
 
-        // 5. 起點(綠色)與終點(紅色)標示
-        var pulse = 30 + Math.sin(Date.now() / 150) * 5; // 加大光環
+        // 起點(綠色)與終點(紅色)標示
+        var pulse = 30 + Math.sin(Date.now() / 150) * 5; 
         ctx.beginPath();
         ctx.arc(startPoint.x, startPoint.y, pulse, 0, Math.PI * 2);
         ctx.fillStyle = 'rgba(46, 213, 115, 0.8)';
@@ -340,7 +339,7 @@
         ctx.stroke();
 
         ctx.beginPath();
-        ctx.arc(endPoint.x, endPoint.y, 40, 0, Math.PI * 2); // 加大終點圓圈
+        ctx.arc(endPoint.x, endPoint.y, 40, 0, Math.PI * 2); 
         ctx.fillStyle = '#ff4757';
         ctx.fill();
         ctx.lineWidth = 4;
