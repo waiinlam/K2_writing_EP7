@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="zh-HK">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>雨傘：鈎 - K2 筆順學習遊戲</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: #f7f9fc;
+            font-family: "Microsoft JhengHei", Arial, sans-serif;
+            touch-action: none; /* 防止手機/平板滑動干擾 */
+        }
+        #game-container {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            max-width: 600px;
+            margin: 0 auto;
+            background: #fff;
+            box-shadow: 0 0 20px rgba(0,0,0,0.1);
+        }
+        canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+        /* 左上角星星進度 */
+        #score-board {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            font-size: 24px;
+            z-index: 10;
+            background: rgba(255, 255, 255, 0.8);
+            padding: 8px 15px;
+            border-radius: 20px;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+        }
+        /* 全螢幕獎勵動畫遮罩 */
+        #reward-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.6);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 100;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.4s ease;
+        }
+        #reward-overlay.show {
+            opacity: 1;
+            pointer-events: auto;
+        }
+        .reward-card {
+            background: #fff;
+            padding: 30px 50px;
+            border-radius: 30px;
+            text-align: center;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+            animation: bounceIn 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+        }
+        .reward-card h1 {
+            color: #ff6b81;
+            font-size: 40px;
+            margin: 0 0 20px 0;
+        }
+        /* 再玩一次按鈕 */
+        #restart-btn {
+            position: absolute;
+            bottom: 30px;
+            left: 50%;
+            transform: translateX(-50%);
+            padding: 15px 40px;
+            font-size: 22px;
+            font-weight: bold;
+            color: white;
+            background: #ff4757;
+            border: none;
+            border-radius: 50px;
+            box-shadow: 0 6px 20px rgba(255, 71, 87, 0.4);
+            cursor: pointer;
+            z-index: 20;
+            display: none;
+            transition: transform 0.2s;
+        }
+        #restart-btn:active {
+            transform: translateX(-50%) scale(0.95);
+        }
+        @keyframes bounceIn {
+            0% { transform: scale(0.3); opacity: 0; }
+            50% { transform: scale(1.05); opacity: 1; }
+            100% { transform: scale(1); opacity: 1; }
+        }
+    </style>
+</head>
+<body>
+
+<div id="game-container">
+    <div id="score-board">⭐ <span id="star-count">0</span> / 5</div>
+    <canvas id="gameCanvas"></canvas>
+    <button id="restart-btn">再玩一次</button>
+    
+    <div id="reward-overlay">
+        <div class="reward-card">
+            <h1>✨ 你真努力！</h1>
+            <p id="reward-sub" style="font-size: 20px; color: #555; margin: 0;">太棒了，完成一個鈎囉！</p>
+        </div>
+    </div>
+</div>
+
+<script>
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    const starCountEl = document.getElementById('star-count');
+    const rewardOverlay = document.getElementById('reward-overlay');
+    const restartBtn = document.getElementById('restart-btn');
+
+    // 圖片資源
+    const bgImg = new Image();
+    bgImg.src = '20.png';
+    const umbrellaImg = new Image();
+    umbrellaImg.src = '21.png';
+
+    let imagesLoaded = 0;
+    bgImg.onload = () => { checkImagesLoaded(); };
+    umbrellaImg.onload = () => { checkImagesLoaded(); };
+
+    function checkImagesLoaded() {
+        imagesLoaded++;
+        if (imagesLoaded === 2) {
+            resizeCanvas();
+            initGame();
+            loop();
+        }
+    }
+
+    // 遊戲狀態變數
+    let scale = 1, offsetX = 0, offsetY = 0;
+    let logicalWidth = 1414, logicalHeight = 2000;
+    let completedStars = 0;
+    let isGameOver = false;
+
+    // 互動控制
+    let isDragging = false;
+    let userPath = []; // 紀錄畫過的點
+    let startPoint = { x: 0, y: 0 };
+    let endPoint = { x: 0, y: 0 };
+    let hookControlPoint = { x: 0, y: 0 }; // 模擬鈎的曲線控制點
+    const touchRadius = 60; // 容許小朋友觸控的寬鬆判定範圍
+
+    function resizeCanvas() {
+        const container = document.getElementById('game-container');
+        const width = container.clientWidth;
+        const height = container.clientHeight;
+
+        canvas.width = width * window.devicePixelRatio;
+        canvas.height = height * window.devicePixelRatio;
+        ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
+
+        // 計算適應畫面比例 (保持 1414:2000 比例置中)
+        const scaleX = width / logicalWidth;
+        const scaleY = height / logicalHeight;
+        scale = Math.min(scaleX, scaleY);
+
+        offsetX = (width - logicalWidth * scale) / 2;
+        offsetY = (height - logicalHeight * scale) / 2;
+    }
+
+    window.addEventListener('resize', () => {
+        resizeCanvas();
+        if(imagesLoaded === 2) initCoordinates();
+    });
+
+    function initCoordinates() {
+        // 根據 1414x2000 畫布設定「雨傘：鈎」的起點與終點座標
+        // 起點設於傘布下方中心偏上，終點為傘柄末端（向右勾起）
+        startPoint = { x: 707, y: 1100 }; 
+        endPoint = { x: 760, y: 1550 };
+        hookControlPoint = { x: 707, y: 1550 }; // 產生圓弧鈎形
+    }
+
+    function initGame() {
+        initCoordinates();
+        userPath = [];
+        isDragging = false;
+        rewardOverlay.classList.remove('show');
+    }
+
+    // 座標轉換：螢幕觸控點轉邏輯座標
+    function getLogicalPos(e) {
+        const rect = canvas.getBoundingClientRect();
+        const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+        const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+        
+        const x = (clientX - rect.left - offsetX) / scale;
+        const y = (clientY - rect.top - offsetY) / scale;
+        return { x, y };
+    }
+
+    // 事件監聽 (支援滑鼠與觸控)
+    canvas.addEventListener('mousedown', handleStart);
+    canvas.addEventListener('mousemove', handleMove);
+    canvas.addEventListener('mouseup', handleEnd);
+
+    canvas.addEventListener('touchstart', (e) => { handleStart(e); });
+    canvas.addEventListener('touchmove', (e) => { handleMove(e); });
+    canvas.addEventListener('touchend', (e) => { handleEnd(e); });
+
+    function handleStart(e) {
+        if (isGameOver) return;
+        const pos = getLogicalPos(e);
+
+        // 檢查是否點擊在起點附近
+        const dist = Math.hypot(pos.x - startPoint.x, pos.y - startPoint.y);
+        if (dist <= touchRadius) {
+            isDragging = true;
+            userPath = [startPoint];
+        }
+    }
+
+    function handleMove(e) {
+        if (!isDragging || isGameOver) return;
+        const pos = getLogicalPos(e);
+        userPath.push(pos);
+
+        // 即時檢查是否到達終點附近
+        const distTo przyj = Math.hypot(pos.x - endPoint.x, pos.y - endPoint.y);
+        if (distTo <= touchRadius) {
+            isDragging = false;
+            triggerSuccess();
+        }
+    }
+
+    function handleEnd(e) {
+        if (!isDragging) return;
+        isDragging = false;
+        // 如果未到達終點就放開，清空重來
+        userPath = [];
+    }
+
+    function triggerSuccess() {
+        completedStars++;
+        starCountEl.textContent = completedStars;
+
+        if (completedStars >= 5) {
+            isGameOver = true;
+            rewardOverlay.classList.add('show');
+            document.getElementById('reward-sub').textContent = "你已經完成 5 次挑戰囉！";
+            restartBtn.style.display = 'block';
+        } else {
+            rewardOverlay.classList.add('show');
+            setTimeout(() => {
+                rewardOverlay.classList.remove('show');
+                initGame();
+            }, 1200);
+        }
+    }
+
+    restartBtn.addEventListener('click', () => {
+        completedStars = 0;
+        starCountEl.textContent = completedStars;
+        isGameOver = false;
+        restartBtn.style.display = 'none';
+        initGame();
+    });
+
+    // 繪製邏輯
+    function loop() {
+        ctx.clearRect(0, 0, canvas.width / window.devicePixelRatio, canvas.height / window.devicePixelRatio);
+
+        ctx.save();
+        ctx.translate(offsetX, offsetY);
+        ctx.scale(scale, scale);
+
+        // 1. 繪製背景 (20.png)
+        if (bgImg.complete) {
+            ctx.drawImage(bgImg, 0, 0, logicalWidth, logicalHeight);
+        }
+
+        // 2. 繪製雨傘 (21.png，置中)
+        if (umbrellaImg.complete) {
+            ctx.drawImage(umbrellaImg, 0, 0, logicalWidth, logicalHeight);
+        }
+
+        // 3. 繪製半透明安全道路提示（引導運筆：垂直向下並向右勾起）
+        ctx.beginPath();
+        ctx.moveTo(startPoint.x, startPoint.y);
+        ctx.quadraticCurveTo(hookControlPoint.x, hookControlPoint.y, endPoint.x, endPoint.y);
+        ctx.strokeStyle = 'rgba(255, 165, 0, 0.4)';
+        ctx.lineWidth = 35;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        ctx.stroke();
+
+        // 4. 繪製小朋友畫過的粗實線軌跡
+        if (userPath.length > 1) {
+            ctx.beginPath();
+            ctx.moveTo(userPath[0].x, userPath[0].y);
+            for (let i = 1; i < userPath.length; i++) {
+                ctx.lineTo(userPath[i].x, userPath[i].y);
+            }
+            ctx.strokeStyle = '#ff3838';
+            ctx.lineWidth = 25;
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+            ctx.stroke();
+        }
+
+        // 5. 繪製起點與終點提示導引圓點
+        // 起點 (閃爍綠燈引導)
+        const pulse = 15 + Math.sin(Date.now() / 150) * 3;
+        ctx.beginPath();
+        ctx.arc(startPoint.x, startPoint.y, pulse, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(46, 213, 115, 0.8)';
+        ctx.fill();
+        ctx.lineWidth = 4;
+        ctx.strokeStyle = '#fff';
+        ctx.stroke();
+
+        // 終點 (標示目標星星)
+        ctx.beginPath();
+        ctx.arc(endPoint.x, endPoint.y, 25, 0, Math.PI * 2);
+        ctx.fillStyle = '#ff4757';
+        ctx.fill();
+        ctx.lineWidth = 4;
+        ctx.strokeStyle = '#fff';
+        ctx.stroke();
+
+        ctx.restore();
+        requestAnimationFrame(loop);
+    }
+</script>
+
+</body>
+</html>
