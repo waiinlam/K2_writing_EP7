@@ -130,9 +130,10 @@
     var hookControlPoint = { x: 707, y: 1560 }; 
     var endPoint = { x: 550, y: 1450 };         
 
-    // --- 防出界系統設定 ---
+    // --- 防出界與判定系統設定 ---
     var pathWidth = 80;            
-    var touchRadius = 100;         
+    var touchRadius = 100;         // 起點感應範圍 (維持較大，方便起筆)
+    var endRadius = 45;            // 終點感應範圍 (縮小至與紅點相若，必須到達紅點才算成功！)
     var allowedDeviation = 90;     
     
     var isDragging = false;
@@ -244,7 +245,9 @@
 
         userPath.push(pos);
 
-        if (getDistance(pos, endPoint) <= touchRadius) {
+        // --- 嚴格的終點判定 ---
+        // 使用 endRadius (45)，必須到達紅色圓點內部才會觸發成功
+        if (getDistance(pos, endPoint) <= endRadius) {
             isDragging = false;
             triggerSuccess();
         }
@@ -325,8 +328,8 @@
         }
 
         // --- 5. 標示點 (起點、轉角位、終點) ---
-        var pulseStart = 30 + Math.sin(Date.now() / 150) * 5; // 起點呼吸燈大小
-        var pulseTurn = 25 + Math.sin(Date.now() / 150) * 5;  // 轉角位呼吸燈大小 (略小一點)
+        var pulseStart = 30 + Math.sin(Date.now() / 150) * 5; 
+        var pulseTurn = 25 + Math.sin(Date.now() / 150) * 5;  
 
         // 起點 (綠色閃爍)
         ctx.beginPath();
@@ -337,7 +340,7 @@
         ctx.strokeStyle = '#fff';
         ctx.stroke();
 
-        // 轉角位 (綠色閃爍 - 新增!)
+        // 轉角位 (綠色閃爍)
         ctx.beginPath();
         ctx.arc(turnPoint.x, turnPoint.y, pulseTurn, 0, Math.PI * 2);
         ctx.fillStyle = 'rgba(46, 213, 115, 0.8)';
@@ -346,7 +349,7 @@
         ctx.strokeStyle = '#fff';
         ctx.stroke();
 
-        // 終點 (紅色固定圓形)
+        // 終點 (紅色固定圓形，半徑剛好與 endRadius 相若)
         ctx.beginPath();
         ctx.arc(endPoint.x, endPoint.y, 40, 0, Math.PI * 2); 
         ctx.fillStyle = '#ff4757';
