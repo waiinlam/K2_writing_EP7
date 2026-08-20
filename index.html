@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>雨傘：鈎 - K2 筆順學習遊戲</title>
+    <title>雨傘：直鈎 - K2 筆順學習遊戲</title>
     <style>
         * {
             box-sizing: border-box;
@@ -19,13 +19,13 @@
             overflow: hidden;
             background-color: #f7f9fc;
             font-family: "Microsoft JhengHei", Arial, sans-serif;
-            touch-action: none; /* 徹底防止畫面滑動 */
+            touch-action: none; /* 徹底防止 iPad 畫面滑動 */
         }
         #game-container {
             position: relative;
             width: 100%;
             height: 100%;
-            max-width: 600px;
+            max-width: 800px;
             margin: 0 auto;
             background: #fff;
             box-shadow: 0 0 20px rgba(0,0,0,0.1);
@@ -106,7 +106,7 @@
     <div id="reward-overlay">
         <div class="reward-card">
             <h1>✨ 你真努力！</h1>
-            <p id="reward-sub" style="font-size: 20px; color: #555; margin: 0;">太棒了，完成一個鈎囉！</p>
+            <p id="reward-sub" style="font-size: 20px; color: #555; margin: 0;">太棒了，完成一個直鈎囉！</p>
         </div>
     </div>
 </div>
@@ -123,20 +123,25 @@
     var completedStars = 0;
     var isGameOver = false;
 
+    // ==========================================
+    // 📍 座標微調區 (對應 1414 x 2000 畫布)
+    // 如果發現路線同把遮柄有少少偏差，可以改呢度嘅數字
+    // ==========================================
+    var startPoint = { x: 707, y: 1000 };       // 1. 起點 (傘布下方正中，向下直落)
+    var turnPoint = { x: 707, y: 1550 };        // 2. 轉角位 (直線落到呢度，準備轉彎)
+    var hookControlPoint = { x: 707, y: 1600 }; // 3. 彎位控制點 (控制轉角有幾深)
+    var endPoint = { x: 550, y: 1450 };         // 4. 終點 (向左上方挑起嘅尖端)
+    
+    var touchRadius = 80; // 觸控判定範圍 (數字越大越易玩)
     var isDragging = false;
     var userPath = [];
-    var startPoint = { x: 707, y: 1100 }; // 起點
-    var endPoint = { x: 760, y: 1550 };   // 終點
-    var hookControlPoint = { x: 707, y: 1550 }; // 曲線控制點
-    var touchRadius = 80; // 寬鬆的觸控判定範圍
 
-    // 載入背景圖 20.png
+    // 載入圖片 (確保背景及雨傘完全載入)
     var bgImg = new Image();
     var bgLoaded = false;
     bgImg.onload = function() { bgLoaded = true; };
     bgImg.src = '20.png';
 
-    // 載入雨傘圖 21.png
     var umbrellaImg = new Image();
     var umbrellaLoaded = false;
     umbrellaImg.onload = function() { umbrellaLoaded = true; };
@@ -152,6 +157,7 @@
         canvas.height = height * pixelRatio;
         ctx.scale(pixelRatio, pixelRatio);
 
+        // 使用 Math.min 確保畫面完美置中，背景圖完整顯示不被裁切
         var scaleX = width / logicalWidth;
         var scaleY = height / logicalHeight;
         scale = Math.min(scaleX, scaleY);
@@ -179,7 +185,7 @@
         return Math.sqrt(dx * dx + dy * dy);
     }
 
-    // 事件監聽
+    // 防干擾事件監聽
     canvas.addEventListener('mousedown', handleStart, false);
     canvas.addEventListener('mousemove', handleMove, false);
     canvas.addEventListener('mouseup', handleEnd, false);
@@ -212,7 +218,7 @@
     function handleEnd(e) {
         if (!isDragging) return;
         isDragging = false;
-        userPath = [];
+        userPath = []; 
     }
 
     function triggerSuccess() {
@@ -248,30 +254,30 @@
         ctx.translate(offsetX, offsetY);
         ctx.scale(scale, scale);
 
-        // 繪製背景
+        // 1. 繪製背景 (白色底層 + 20.png)
+        ctx.fillStyle = "#ffffff";
+        ctx.fillRect(0, 0, logicalWidth, logicalHeight);
         if (bgLoaded) {
             ctx.drawImage(bgImg, 0, 0, logicalWidth, logicalHeight);
-        } else {
-            ctx.fillStyle = "#e8eff5";
-            ctx.fillRect(0, 0, logicalWidth, logicalHeight);
         }
 
-        // 繪製雨傘
+        // 2. 繪製雨傘 (21.png)
         if (umbrellaLoaded) {
             ctx.drawImage(umbrellaImg, 0, 0, logicalWidth, logicalHeight);
         }
 
-        // 繪製引導路線
+        // 3. 繪製中文筆畫「直鈎」半透明橙色引導線
         ctx.beginPath();
         ctx.moveTo(startPoint.x, startPoint.y);
-        ctx.quadraticCurveTo(hookControlPoint.x, hookControlPoint.y, endPoint.x, endPoint.y);
+        ctx.lineTo(turnPoint.x, turnPoint.y); // 直落 90%
+        ctx.quadraticCurveTo(hookControlPoint.x, hookControlPoint.y, endPoint.x, endPoint.y); // 左上鈎起 10%
         ctx.strokeStyle = 'rgba(255, 165, 0, 0.4)';
         ctx.lineWidth = 40;
         ctx.lineCap = 'round';
         ctx.lineJoin = 'round';
         ctx.stroke();
 
-        // 繪製玩家軌跡
+        // 4. 繪製玩家軌跡 (紅色實線)
         if (userPath.length > 1) {
             ctx.beginPath();
             ctx.moveTo(userPath[0].x, userPath[0].y);
@@ -285,7 +291,7 @@
             ctx.stroke();
         }
 
-        // 起點與終點標示
+        // 5. 起點(綠色閃爍)與終點(紅色)標示
         var pulse = 20 + Math.sin(Date.now() / 150) * 5;
         ctx.beginPath();
         ctx.arc(startPoint.x, startPoint.y, pulse, 0, Math.PI * 2);
