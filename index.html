@@ -19,7 +19,7 @@
             overflow: hidden;
             background-color: #f7f9fc;
             font-family: "Microsoft JhengHei", Arial, sans-serif;
-            touch-action: none; /* 徹底防止 iPad 畫面滑動 */
+            touch-action: none;
         }
         #game-container {
             position: relative;
@@ -123,20 +123,22 @@
     var completedStars = 0;
     var isGameOver = false;
 
-    // ==========================================
-    // 📍 座標微調區 (對應 1414 x 2000 畫布)
-    // 如果發現路線同把遮柄有少少偏差，可以改呢度嘅數字
-    // ==========================================
-    var startPoint = { x: 707, y: 1000 };       // 1. 起點 (傘布下方正中，向下直落)
-    var turnPoint = { x: 707, y: 1550 };        // 2. 轉角位 (直線落到呢度，準備轉彎)
-    var hookControlPoint = { x: 707, y: 1600 }; // 3. 彎位控制點 (控制轉角有幾深)
-    var endPoint = { x: 550, y: 1450 };         // 4. 終點 (向左上方挑起嘅尖端)
+    // --- 新版座標設定 (傘邊下起點、縮短 5% 直線) ---
+    var startPoint = { x: 707, y: 1100 };       // 起點 (移至傘邊下方)
+    var turnPoint = { x: 707, y: 1510 };        // 轉角位 (直線長度縮短)
+    var hookControlPoint = { x: 707, y: 1560 }; // 彎位控制點
+    var endPoint = { x: 550, y: 1450 };         // 終點 
+
+    // --- 防出界系統設定 ---
+    var pathWidth = 80;            // 200% 加寬的引導路線
+    var touchRadius = 100;         // 起點/終點的感應範圍 (加大方便點擊)
+    var allowedDeviation = 90;     // 允許手指偏離路線的最大距離，超過此數字即視為「出界重來」
     
-    var touchRadius = 80; // 觸控判定範圍 (數字越大越易玩)
     var isDragging = false;
     var userPath = [];
+    var guidePoints = []; // 預先計算好的軌跡中心點，用作偵測是否出界
 
-    // 載入圖片 (確保背景及雨傘完全載入)
+    // 載入圖片
     var bgImg = new Image();
     var bgLoaded = false;
     bgImg.onload = function() { bgLoaded = true; };
@@ -146,6 +148,26 @@
     var umbrellaLoaded = false;
     umbrellaImg.onload = function() { umbrellaLoaded = true; };
     umbrellaImg.src = '21.png';
+
+    // 預先產生「防出界」的軌跡偵測點
+    function generateGuidePoints() {
+        guidePoints = [];
+        // 1. 直線部分
+        for (var i = 0; i <= 1; i += 0.05) {
+            guidePoints.push({
+                x: startPoint.x + (turnPoint.x - startPoint.x) * i,
+                y: startPoint.y + (turnPoint.y - startPoint.y) * i
+            });
+        }
+        // 2. 轉彎鈎起部分 (二次貝茲曲線公式)
+        for (var i = 0; i <= 1; i += 0.05) {
+            var u = 1 - i;
+            var x = u * u * turnPoint.x + 2 * u * i * hookControlPoint.x + i * i * endPoint.x;
+            var y = u * u * turnPoint.y + 2 * u * i * hookControlPoint.y + i * i * endPoint.y;
+            guidePoints.push({ x: x, y: y });
+        }
+    }
+    generateGuidePoints(); // 初始化時執行一次
 
     function resizeCanvas() {
         var container = document.getElementById('game-container');
@@ -157,7 +179,6 @@
         canvas.height = height * pixelRatio;
         ctx.scale(pixelRatio, pixelRatio);
 
-        // 使用 Math.min 確保畫面完美置中，背景圖完整顯示不被裁切
         var scaleX = width / logicalWidth;
         var scaleY = height / logicalHeight;
         scale = Math.min(scaleX, scaleY);
@@ -185,7 +206,7 @@
         return Math.sqrt(dx * dx + dy * dy);
     }
 
-    // 防干擾事件監聽
+    // 事件監聽
     canvas.addEventListener('mousedown', handleStart, false);
     canvas.addEventListener('mousemove', handleMove, false);
     canvas.addEventListener('mouseup', handleEnd, false);
@@ -207,8 +228,27 @@
     function handleMove(e) {
         if (!isDragging || isGameOver) return;
         var pos = getLogicalPos(e);
+        
+        // --- 檢查是否出界 (防偏離系統) ---
+        var isOffPath = true;
+        for (var i = 0; i < guidePoints.length; i++) {
+            if (getDistance(pos, guidePoints[i]) <= allowedDeviation) {
+                isOffPath = false; // 只要靠近軌跡上的任何一點，就當作在路線內
+                break;
+            }
+        }
+
+        if (isOffPath) {
+            // 如果出界，直接中斷拖曳並清空筆畫 (重回起點)
+            isDragging = false;
+            userPath = [];
+            return;
+        }
+
+        // 如果未出界，記錄筆畫
         userPath.push(pos);
 
+        // 檢查是否到達終點
         if (getDistance(pos, endPoint) <= touchRadius) {
             isDragging = false;
             triggerSuccess();
@@ -254,30 +294,28 @@
         ctx.translate(offsetX, offsetY);
         ctx.scale(scale, scale);
 
-        // 1. 繪製背景 (白色底層 + 20.png)
         ctx.fillStyle = "#ffffff";
         ctx.fillRect(0, 0, logicalWidth, logicalHeight);
         if (bgLoaded) {
             ctx.drawImage(bgImg, 0, 0, logicalWidth, logicalHeight);
         }
 
-        // 2. 繪製雨傘 (21.png)
         if (umbrellaLoaded) {
             ctx.drawImage(umbrellaImg, 0, 0, logicalWidth, logicalHeight);
         }
 
-        // 3. 繪製中文筆畫「直鈎」半透明橙色引導線
+        // 3. 繪製加寬 200% 的引導路線
         ctx.beginPath();
         ctx.moveTo(startPoint.x, startPoint.y);
-        ctx.lineTo(turnPoint.x, turnPoint.y); // 直落 90%
-        ctx.quadraticCurveTo(hookControlPoint.x, hookControlPoint.y, endPoint.x, endPoint.y); // 左上鈎起 10%
+        ctx.lineTo(turnPoint.x, turnPoint.y); 
+        ctx.quadraticCurveTo(hookControlPoint.x, hookControlPoint.y, endPoint.x, endPoint.y); 
         ctx.strokeStyle = 'rgba(255, 165, 0, 0.4)';
-        ctx.lineWidth = 40;
+        ctx.lineWidth = pathWidth; // 寬度設為 80
         ctx.lineCap = 'round';
         ctx.lineJoin = 'round';
         ctx.stroke();
 
-        // 4. 繪製玩家軌跡 (紅色實線)
+        // 4. 繪製玩家軌跡
         if (userPath.length > 1) {
             ctx.beginPath();
             ctx.moveTo(userPath[0].x, userPath[0].y);
@@ -285,14 +323,14 @@
                 ctx.lineTo(userPath[i].x, userPath[i].y);
             }
             ctx.strokeStyle = '#ff3838';
-            ctx.lineWidth = 25;
+            ctx.lineWidth = 40; // 相應加粗紅色軌跡
             ctx.lineCap = 'round';
             ctx.lineJoin = 'round';
             ctx.stroke();
         }
 
-        // 5. 起點(綠色閃爍)與終點(紅色)標示
-        var pulse = 20 + Math.sin(Date.now() / 150) * 5;
+        // 5. 起點(綠色)與終點(紅色)標示
+        var pulse = 30 + Math.sin(Date.now() / 150) * 5; // 加大光環
         ctx.beginPath();
         ctx.arc(startPoint.x, startPoint.y, pulse, 0, Math.PI * 2);
         ctx.fillStyle = 'rgba(46, 213, 115, 0.8)';
@@ -302,7 +340,7 @@
         ctx.stroke();
 
         ctx.beginPath();
-        ctx.arc(endPoint.x, endPoint.y, 25, 0, Math.PI * 2);
+        ctx.arc(endPoint.x, endPoint.y, 40, 0, Math.PI * 2); // 加大終點圓圈
         ctx.fillStyle = '#ff4757';
         ctx.fill();
         ctx.lineWidth = 4;
