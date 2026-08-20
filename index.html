@@ -2,13 +2,15 @@
 <html lang="zh-HK">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <!-- 確保手機/平板不會因為雙擊或縮放而移位 -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>雨傘：鈎 - K2 筆順學習遊戲</title>
     <style>
         * {
             box-sizing: border-box;
             user-select: none;
             -webkit-user-select: none;
+            -webkit-touch-callout: none; /* 防止長按彈出選單 */
         }
         body, html {
             margin: 0;
@@ -18,7 +20,7 @@
             overflow: hidden;
             background-color: #f7f9fc;
             font-family: "Microsoft JhengHei", Arial, sans-serif;
-            touch-action: none;
+            touch-action: none; /* 鎖定畫布防止滑動 */
         }
         #game-container {
             position: relative;
@@ -34,6 +36,7 @@
             width: 100%;
             height: 100%;
         }
+        /* 計分板 */
         #score-board {
             position: absolute;
             top: 20px;
@@ -45,6 +48,7 @@
             border-radius: 20px;
             box-shadow: 0 4px 10px rgba(0,0,0,0.1);
         }
+        /* 獎勵畫面 */
         #reward-overlay {
             position: absolute;
             top: 0;
@@ -117,37 +121,40 @@
     var rewardOverlay = document.getElementById('reward-overlay');
     var restartBtn = document.getElementById('restart-btn');
 
+    // 遊戲與畫布設定
     var scale = 1, offsetX = 0, offsetY = 0;
     var logicalWidth = 1414, logicalHeight = 2000;
     var completedStars = 0;
     var isGameOver = false;
 
+    // 互動設定
     var isDragging = false;
     var userPath = [];
-    var startPoint = { x: 707, y: 1100 };
-    var endPoint = { x: 760, y: 1550 };
-    var hookControlPoint = { x: 707, y: 1550 };
-    var touchRadius = 65;
+    var startPoint = { x: 707, y: 1100 }; // 起點 (傘布下方)
+    var endPoint = { x: 760, y: 1550 };   // 終點 (傘柄末端)
+    var hookControlPoint = { x: 707, y: 1550 }; // 曲線控制點
+    var touchRadius = 80; // 放寬小朋友的觸控判定範圍
 
-    // 載入圖片
+    // ====== 圖片載入與錯誤追蹤系統 ======
     var bgImg = new Image();
+    var bgStatus = 'loading'; // loading, loaded, error
+    bgImg.onload = function() { bgStatus = 'loaded'; };
+    bgImg.onerror = function() { bgStatus = 'error'; };
     bgImg.src = '20.png';
-    var bgLoaded = false;
-    bgImg.onload = function() { bgLoaded = true; };
 
     var umbrellaImg = new Image();
+    var umbrellaStatus = 'loading';
+    umbrellaImg.onload = function() { umbrellaStatus = 'loaded'; };
+    umbrellaImg.onerror = function() { umbrellaStatus = 'error'; };
     umbrellaImg.src = '21.png';
-    var umbrellaLoaded = false;
-    umbrellaImg.onload = function() { umbrellaLoaded = true; };
 
+    // 畫布自適應大小
     function resizeCanvas() {
         var container = document.getElementById('game-container');
         var width = container.clientWidth;
         var height = container.clientHeight;
         
-        // 為了舊平板相容性，取較安全的數值
         var pixelRatio = window.devicePixelRatio || 1;
-
         canvas.width = width * pixelRatio;
         canvas.height = height * pixelRatio;
         ctx.scale(pixelRatio, pixelRatio);
@@ -163,6 +170,7 @@
     window.addEventListener('resize', resizeCanvas);
     resizeCanvas();
 
+    // 座標轉換
     function getLogicalPos(e) {
         var rect = canvas.getBoundingClientRect();
         var clientX = e.touches && e.touches.length > 0 ? e.touches[0].clientX : e.clientX;
@@ -173,20 +181,22 @@
         };
     }
 
-    // 計算兩點距離 (傳統寫法相容舊設備)
+    // 計算兩點距離
     function getDistance(p1, p2) {
         var dx = p1.x - p2.x;
         var dy = p1.y - p2.y;
         return Math.sqrt(dx * dx + dy * dy);
     }
 
+    // ====== 事件監聽 (支援滑鼠與觸控，解決 iPad 滑動干擾) ======
     canvas.addEventListener('mousedown', handleStart, false);
     canvas.addEventListener('mousemove', handleMove, false);
     canvas.addEventListener('mouseup', handleEnd, false);
+    canvas.addEventListener('mouseleave', handleEnd, false);
 
-    canvas.addEventListener('touchstart', function(e) { handleStart(e); }, {passive: false});
+    canvas.addEventListener('touchstart', function(e) { e.preventDefault(); handleStart(e); }, {passive: false});
     canvas.addEventListener('touchmove', function(e) { e.preventDefault(); handleMove(e); }, {passive: false});
-    canvas.addEventListener('touchend', function(e) { handleEnd(e); }, false);
+    canvas.addEventListener('touchend', function(e) { e.preventDefault(); handleEnd(e); }, {passive: false});
 
     function handleStart(e) {
         if (isGameOver) return;
@@ -202,18 +212,20 @@
         var pos = getLogicalPos(e);
         userPath.push(pos);
 
+        // 如果到達終點
         if (getDistance(pos, endPoint) <= touchRadius) {
             isDragging = false;
             triggerSuccess();
         }
     }
 
-    function handleEnd() {
+    function handleEnd(e) {
         if (!isDragging) return;
         isDragging = false;
-        userPath = [];
+        userPath = []; // 未達終點放手則重置
     }
 
+    // 成功完成一次鈎
     function triggerSuccess() {
         completedStars++;
         starCountEl.textContent = completedStars;
@@ -241,37 +253,50 @@
         rewardOverlay.classList.remove('show');
     });
 
-    // 畫面主迴圈
+    // ====== 遊戲繪製主迴圈 ======
     function loop() {
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         ctx.save();
         ctx.translate(offsetX, offsetY);
         ctx.scale(scale, scale);
 
-        // 背景
-        if (bgLoaded) {
+        // 1. 繪製背景 (20.png)
+        if (bgStatus === 'loaded') {
             ctx.drawImage(bgImg, 0, 0, logicalWidth, logicalHeight);
+        } else if (bgStatus === 'error') {
+            ctx.fillStyle = "#ffeaa7";
+            ctx.fillRect(0, 0, logicalWidth, logicalHeight);
+            ctx.fillStyle = "red";
+            ctx.font = "60px Arial";
+            ctx.fillText("錯誤: 找不到 20.png", 50, 100);
         } else {
             ctx.fillStyle = "#e8eff5";
             ctx.fillRect(0, 0, logicalWidth, logicalHeight);
+            ctx.fillStyle = "black";
+            ctx.font = "60px Arial";
+            ctx.fillText("載入背景中...", 50, 100);
         }
 
-        // 雨傘
-        if (umbrellaLoaded) {
+        // 2. 繪製雨傘 (21.png)
+        if (umbrellaStatus === 'loaded') {
             ctx.drawImage(umbrellaImg, 0, 0, logicalWidth, logicalHeight);
+        } else if (umbrellaStatus === 'error') {
+            ctx.fillStyle = "red";
+            ctx.font = "60px Arial";
+            ctx.fillText("錯誤: 找不到 21.png", 50, 200);
         }
 
-        // 提示線
+        // 3. 繪製引導路線 (半透明橙色)
         ctx.beginPath();
         ctx.moveTo(startPoint.x, startPoint.y);
         ctx.quadraticCurveTo(hookControlPoint.x, hookControlPoint.y, endPoint.x, endPoint.y);
-        ctx.strokeStyle = 'rgba(255, 165, 0, 0.5)';
-        ctx.lineWidth = 35;
+        ctx.strokeStyle = 'rgba(255, 165, 0, 0.4)';
+        ctx.lineWidth = 40; // 加粗引導線方便小朋友看
         ctx.lineCap = 'round';
         ctx.lineJoin = 'round';
         ctx.stroke();
 
-        // 玩家軌跡
+        // 4. 繪製玩家畫的軌跡 (實體紅色)
         if (userPath.length > 1) {
             ctx.beginPath();
             ctx.moveTo(userPath[0].x, userPath[0].y);
@@ -285,10 +310,11 @@
             ctx.stroke();
         }
 
-        // 起點與終點圓圈
+        // 5. 繪製起點 (綠色光環) 與終點 (紅色目標)
+        var pulse = 20 + Math.sin(Date.now() / 150) * 5;
         ctx.beginPath();
-        ctx.arc(startPoint.x, startPoint.y, 20, 0, Math.PI * 2);
-        ctx.fillStyle = 'rgba(46, 213, 115, 0.9)';
+        ctx.arc(startPoint.x, startPoint.y, pulse, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(46, 213, 115, 0.8)';
         ctx.fill();
         ctx.lineWidth = 4;
         ctx.strokeStyle = '#fff';
@@ -304,7 +330,6 @@
 
         ctx.restore();
         
-        // 舊設備相容的動畫呼叫
         var reqAnimFrame = window.requestAnimationFrame || window.webkitRequestAnimationFrame || window.mozRequestAnimationFrame || function(callback) { window.setTimeout(callback, 1000 / 60); };
         reqAnimFrame(loop);
     }
